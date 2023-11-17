@@ -206,6 +206,6 @@ jobs:
         with:
           context: .          
           push: true
-          platforms: linux/${{ matrix.platform }}
+          platforms: linux/${{ matrix.arch }}
           file: ./docker/pgvecto-rs.Dockerfile
           tags: silverha/pgvecto-rs:latest, silverha/pgvecto-rs:pg${{ matrix.version }}-${{ needs.setup.outputs.version }}-${{ matrix.arch }}
