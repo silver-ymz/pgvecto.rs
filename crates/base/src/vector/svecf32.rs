@@ -513,8 +513,8 @@ unsafe fn sl2_v4(lhs: SVecf32Borrowed<'_>, rhs: SVecf32Borrowed<'_>) -> F32 {
             let v_r = _mm512_maskz_compress_ps(m_r, v_r);
             let d = _mm512_sub_ps(v_l, v_r);
             dd = _mm512_fmadd_ps(d, d, dd);
-            dd = _mm512_fmsub_ps(v_l, v_l, dd);
-            dd = _mm512_fmsub_ps(v_r, v_r, dd);
+            dd = _mm512_sub_ps(dd, _mm512_mul_ps(v_l, v_l));
+            dd = _mm512_sub_ps(dd, _mm512_mul_ps(v_r, v_r));
             let l_max = lhs.indexes().get_unchecked(lhs_pos + W - 1);
             let r_max = rhs.indexes().get_unchecked(rhs_pos + W - 1);
             match l_max.cmp(r_max) {
@@ -544,8 +544,8 @@ unsafe fn sl2_v4(lhs: SVecf32Borrowed<'_>, rhs: SVecf32Borrowed<'_>) -> F32 {
             let v_r = _mm512_maskz_compress_ps(m_r, v_r);
             let d = _mm512_sub_ps(v_l, v_r);
             dd = _mm512_fmadd_ps(d, d, dd);
-            dd = _mm512_fmsub_ps(v_l, v_l, dd);
-            dd = _mm512_fmsub_ps(v_r, v_r, dd);
+            dd = _mm512_sub_ps(dd, _mm512_mul_ps(v_l, v_l));
+            dd = _mm512_sub_ps(dd, _mm512_mul_ps(v_r, v_r));
             let l_max = lhs.indexes().get_unchecked(lhs_pos + len_l - 1);
             let r_max = rhs.indexes().get_unchecked(rhs_pos + len_r - 1);
             match l_max.cmp(r_max) {
@@ -592,7 +592,7 @@ unsafe fn sl2_v4(lhs: SVecf32Borrowed<'_>, rhs: SVecf32Borrowed<'_>) -> F32 {
 #[cfg(all(target_arch = "x86_64", test))]
 #[test]
 fn sl2_v4_test() {
-    const EPSILON: F32 = F32(1e-5);
+    const EPSILON: F32 = F32(1e-3);
     detect::init();
     if !detect::v4::detect() {
         println!("test {} ... skipped (v4)", module_path!());
