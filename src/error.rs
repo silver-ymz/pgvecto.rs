@@ -100,15 +100,6 @@ pgvecto.rs: Dimensions type modifier of a vector column is needed for building t
     }
 }
 
-pub fn bad_opclass() -> ! {
-    error!(
-        "\
-pgvecto.rs: The first column of indexes can only be built on built-in distance functions.
-ADVICE: If you want pgvecto.rs to support more distance functions, \
-visit `https://github.com/tensorchord/pgvecto.rs/issues` and contribute your ideas."
-    );
-}
-
 pub fn bad_index_column_number() -> ! {
     error!(
         "\

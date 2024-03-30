@@ -565,9 +565,9 @@ CREATE OPERATOR <~> (
 -- List of functions
 
 CREATE FUNCTION pgvectors_upgrade() RETURNS void
-STRICT LANGUAGE c AS 'MODULE_PATHNAME', '_vectors_pgvectors_upgrade_wrapper';
+STRICT PARALLEL SAFE LANGUAGE c AS 'MODULE_PATHNAME', '_vectors_pgvectors_upgrade_wrapper';
 
-CREATE FUNCTION to_svector(dims INT, indexes INT[], "values" real[]) RETURNS svector
+CREATE FUNCTION to_svector("dims" INT, "indexes" INT[], "values" real[]) RETURNS svector
 IMMUTABLE STRICT PARALLEL SAFE LANGUAGE c AS 'MODULE_PATHNAME', '_vectors_to_svector_wrapper';
 
 CREATE FUNCTION to_veci8("len" INT, "alpha" real, "offset" real, "values" INT[]) RETURNS veci8
@@ -576,11 +576,11 @@ IMMUTABLE STRICT PARALLEL SAFE LANGUAGE c AS 'MODULE_PATHNAME', '_vectors_to_vec
 CREATE FUNCTION binarize("vector" vector) RETURNS bvector
 IMMUTABLE STRICT PARALLEL SAFE LANGUAGE c AS 'MODULE_PATHNAME', '_vectors_binarize_wrapper';
 
-CREATE FUNCTION text2vec_openai(input TEXT, model TEXT) RETURNS vector
-STRICT LANGUAGE c AS 'MODULE_PATHNAME', '_vectors_text2vec_openai_wrapper';
+CREATE FUNCTION text2vec_openai("input" TEXT, "model" TEXT) RETURNS vector
+STRICT PARALLEL SAFE LANGUAGE c AS 'MODULE_PATHNAME', '_vectors_text2vec_openai_wrapper';
 
 CREATE FUNCTION text2vec_openai_v3(input TEXT) RETURNS vector
-STRICT LANGUAGE plpgsql AS
+STRICT PARALLEL SAFE LANGUAGE plpgsql AS
 $$
 DECLARE 
 variable vectors.vector;
@@ -589,6 +589,9 @@ BEGIN
   RETURN variable;
 END;
 $$;
+
+CREATE FUNCTION alter_vector_index("index" OID, "key" TEXT, "value" TEXT) RETURNS void
+STRICT LANGUAGE c AS 'MODULE_PATHNAME', '_vectors_alter_vector_index_wrapper';
 
 -- List of casts
 
@@ -666,67 +669,67 @@ CREATE OPERATOR FAMILY bigint_attr_ops USING vectors;
 -- List of operator classes
 
 CREATE OPERATOR CLASS vector_l2_ops
-    FOR TYPE vector USING vectors AS
+    FOR TYPE vector USING vectors FAMILY vector_l2_ops AS
     OPERATOR 1 <-> (vector, vector) FOR ORDER BY float_ops;
 
 CREATE OPERATOR CLASS vector_dot_ops
-    FOR TYPE vector USING vectors AS
+    FOR TYPE vector USING vectors FAMILY vector_dot_ops AS
     OPERATOR 1 <#> (vector, vector) FOR ORDER BY float_ops;
 
 CREATE OPERATOR CLASS vector_cos_ops
-    FOR TYPE vector USING vectors AS
+    FOR TYPE vector USING vectors FAMILY vector_cos_ops AS
     OPERATOR 1 <=> (vector, vector) FOR ORDER BY float_ops;
 
 CREATE OPERATOR CLASS vecf16_l2_ops
-    FOR TYPE vecf16 USING vectors AS
+    FOR TYPE vecf16 USING vectors FAMILY vecf16_l2_ops AS
     OPERATOR 1 <-> (vecf16, vecf16) FOR ORDER BY float_ops;
 
 CREATE OPERATOR CLASS vecf16_dot_ops
-    FOR TYPE vecf16 USING vectors AS
+    FOR TYPE vecf16 USING vectors FAMILY vecf16_dot_ops AS
     OPERATOR 1 <#> (vecf16, vecf16) FOR ORDER BY float_ops;
 
 CREATE OPERATOR CLASS vecf16_cos_ops
-    FOR TYPE vecf16 USING vectors AS
+    FOR TYPE vecf16 USING vectors FAMILY vecf16_cos_ops AS
     OPERATOR 1 <=> (vecf16, vecf16) FOR ORDER BY float_ops;
 
 CREATE OPERATOR CLASS svector_l2_ops
-    FOR TYPE svector USING vectors AS
+    FOR TYPE svector USING vectors FAMILY svector_l2_ops AS
     OPERATOR 1 <-> (svector, svector) FOR ORDER BY float_ops;
 
 CREATE OPERATOR CLASS svector_dot_ops
-    FOR TYPE svector USING vectors AS
+    FOR TYPE svector USING vectors FAMILY svector_dot_ops AS
     OPERATOR 1 <#> (svector, svector) FOR ORDER BY float_ops;
 
 CREATE OPERATOR CLASS svector_cos_ops
-    FOR TYPE svector USING vectors AS
+    FOR TYPE svector USING vectors FAMILY svector_cos_ops AS
     OPERATOR 1 <=> (svector, svector) FOR ORDER BY float_ops;
 
 CREATE OPERATOR CLASS bvector_l2_ops
-    FOR TYPE bvector USING vectors AS
+    FOR TYPE bvector USING vectors FAMILY bvector_l2_ops AS
     OPERATOR 1 <-> (bvector, bvector) FOR ORDER BY float_ops;
 
 CREATE OPERATOR CLASS bvector_dot_ops
-    FOR TYPE bvector USING vectors AS
+    FOR TYPE bvector USING vectors FAMILY bvector_dot_ops AS
     OPERATOR 1 <#> (bvector, bvector) FOR ORDER BY float_ops;
 
 CREATE OPERATOR CLASS bvector_cos_ops
-    FOR TYPE bvector USING vectors AS
+    FOR TYPE bvector USING vectors FAMILY bvector_cos_ops AS
     OPERATOR 1 <=> (bvector, bvector) FOR ORDER BY float_ops;
 
 CREATE OPERATOR CLASS bvector_jaccard_ops
-    FOR TYPE bvector USING vectors AS
+    FOR TYPE bvector USING vectors FAMILY bvector_jaccard_ops AS
     OPERATOR 1 <~> (bvector, bvector) FOR ORDER BY float_ops;
 
 CREATE OPERATOR CLASS veci8_l2_ops
-    FOR TYPE veci8 USING vectors AS
+    FOR TYPE veci8 USING vectors FAMILY veci8_l2_ops AS
     OPERATOR 1 <-> (veci8, veci8) FOR ORDER BY float_ops;
 
 CREATE OPERATOR CLASS veci8_dot_ops
-    FOR TYPE veci8 USING vectors AS
+    FOR TYPE veci8 USING vectors FAMILY veci8_dot_ops AS
     OPERATOR 1 <#> (veci8, veci8) FOR ORDER BY float_ops;
 
 CREATE OPERATOR CLASS veci8_cos_ops
-    FOR TYPE veci8 USING vectors AS
+    FOR TYPE veci8 USING vectors FAMILY veci8_cos_ops AS
     OPERATOR 1 <=> (veci8, veci8) FOR ORDER BY float_ops;
 
 CREATE OPERATOR CLASS bigint_attr_ops
@@ -741,7 +744,7 @@ CREATE VIEW pg_vector_index_stat AS
         I.oid AS indexrelid,
         C.relname AS tablename,
         I.relname AS indexname,
-        (_vectors_index_stat(I.relfilenode)).*
+        (_vectors_index_stat(I.oid)).*
     FROM pg_class C JOIN
          pg_index X ON C.oid = X.indrelid JOIN
          pg_class I ON I.oid = X.indexrelid JOIN

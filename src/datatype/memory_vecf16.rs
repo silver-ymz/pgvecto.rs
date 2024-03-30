@@ -36,10 +36,6 @@ impl Vecf16Header {
         self.dims as usize
     }
     pub fn slice(&self) -> &[F16] {
-        debug_assert_eq!(self.varlena & 3, 0);
-        // TODO: force checking it in the future
-        // debug_assert_eq!(self.kind, 1);
-        // debug_assert_eq!(self.reserved, 0);
         unsafe { std::slice::from_raw_parts(self.phantom.as_ptr(), self.dims as usize) }
     }
     pub fn for_borrow(&self) -> Vecf16Borrowed<'_> {
@@ -140,7 +136,11 @@ impl IntoDatum for Vecf16Output {
     }
 
     fn type_oid() -> Oid {
-        pgrx::wrappers::regtypein("vectors.vecf16")
+        let namespace = pgrx::pg_catalog::PgNamespace::search_namespacename(c"vectors").unwrap();
+        let namespace = namespace.get().expect("pgvecto.rs is not installed.");
+        let t = pgrx::pg_catalog::PgType::search_typenamensp(c"vecf16", namespace.oid()).unwrap();
+        let t = t.get().expect("pg_catalog is broken.");
+        t.oid()
     }
 }
 
