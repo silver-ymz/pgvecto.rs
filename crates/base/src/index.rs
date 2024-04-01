@@ -1,5 +1,6 @@
-use crate::distance::*;
+use crate::search::MultiColumnData;
 use crate::vector::*;
+use crate::{distance::*, search::Strategy};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use uuid::Uuid;
@@ -123,7 +124,8 @@ pub struct IndexOptions {
     pub optimizing: OptimizingOptions,
     #[validate]
     pub indexing: IndexingOptions,
-    pub multicolumn: bool,
+    #[validate]
+    pub multicolumn: MultiColumnOptions,
 }
 
 impl IndexOptions {
@@ -135,6 +137,7 @@ impl IndexOptions {
             IndexingOptions::Flat(x) => matches!(x.quantization, QuantizationOptions::Trivial(_)),
             IndexingOptions::Ivf(x) => matches!(x.quantization, QuantizationOptions::Trivial(_)),
             IndexingOptions::Hnsw(x) => matches!(x.quantization, QuantizationOptions::Trivial(_)),
+            IndexingOptions::Acron(x) => matches!(x.quantization, QuantizationOptions::Trivial(_)),
         };
         if !is_trivial {
             return Err(ValidationError::new(
@@ -263,6 +266,7 @@ pub enum IndexingOptions {
     Flat(FlatIndexingOptions),
     Ivf(IvfIndexingOptions),
     Hnsw(HnswIndexingOptions),
+    Acron(AcronIndexingOptions),
 }
 
 impl IndexingOptions {
@@ -284,6 +288,12 @@ impl IndexingOptions {
         };
         x
     }
+    pub fn unwrap_acron(self) -> AcronIndexingOptions {
+        let IndexingOptions::Acron(x) = self else {
+            unreachable!()
+        };
+        x
+    }
 }
 
 impl Default for IndexingOptions {
@@ -298,6 +308,7 @@ impl Validate for IndexingOptions {
             Self::Flat(x) => x.validate(),
             Self::Ivf(x) => x.validate(),
             Self::Hnsw(x) => x.validate(),
+            Self::Acron(x) => x.validate(),
         }
     }
 }
@@ -398,6 +409,55 @@ impl Default for HnswIndexingOptions {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, Validate)]
+#[validate(schema(function = "AcronIndexingOptions::validate_0"))]
+#[serde(deny_unknown_fields)]
+pub struct AcronIndexingOptions {
+    #[serde(default = "AcronIndexingOptions::default_m")]
+    #[validate(range(min = 4, max = 128))]
+    pub m: u32,
+    #[serde(default = "AcronIndexingOptions::default_m_beta")]
+    #[validate(range(min = 4, max = 2000))]
+    pub m_beta: u32,
+    #[serde(default = "AcronIndexingOptions::default_gamma")]
+    #[validate(range(min = 1, max = 1000))]
+    pub gamma: u32,
+    #[serde(default)]
+    #[validate]
+    pub quantization: QuantizationOptions,
+}
+
+impl AcronIndexingOptions {
+    fn default_m() -> u32 {
+        12
+    }
+    fn default_m_beta() -> u32 {
+        24
+    }
+    fn default_gamma() -> u32 {
+        10
+    }
+    fn validate_0(&self) -> Result<(), ValidationError> {
+        if self.m_beta > self.m * self.gamma {
+            return Err(ValidationError::new(
+                "`m_beta` must be less than or equal to `m * gamma`",
+            ));
+        }
+        Ok(())
+    }
+}
+
+impl Default for AcronIndexingOptions {
+    fn default() -> Self {
+        Self {
+            m: Self::default_m(),
+            m_beta: Self::default_m_beta(),
+            gamma: Self::default_gamma(),
+            quantization: Default::default(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 #[serde(rename_all = "snake_case")]
@@ -487,12 +547,35 @@ impl Default for ProductQuantizationOptionsRatio {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Validate)]
+pub struct MultiColumnOptions {
+    pub data_type: MultiColumnDataType,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub enum MultiColumnDataType {
+    None,
+    I32,
+    I64,
+    F32,
+    F64,
+}
+
+impl Default for MultiColumnOptions {
+    fn default() -> Self {
+        Self {
+            data_type: MultiColumnDataType::None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Validate)]
 pub struct SearchOptions {
     pub prefilter_enable: bool,
     #[validate(range(min = 1, max = 65535))]
     pub hnsw_ef_search: usize,
     #[validate(range(min = 1, max = 1_000_000))]
     pub ivf_nprobe: u32,
+    pub acron_filter: Vec<(Strategy, MultiColumnData)>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

@@ -2,14 +2,17 @@ use super::am_options;
 use super::am_scan;
 use crate::error::*;
 use crate::gucs::planning::ENABLE_INDEX;
+use crate::index::am_options::convert_typid_to_dt;
 use crate::index::am_scan::Scanner;
 use crate::index::catalog::{on_index_build, on_index_write};
+use crate::index::utils::from_datum_to_multicolumn_data;
 use crate::index::utils::{ctid_to_pointer, pointer_to_ctid};
 use crate::index::utils::{from_datum_to_vector, from_oid_to_handle};
 use crate::ipc::{client, ClientRpc};
 use crate::utils::cells::PgCell;
 use am_options::Reloption;
 use base::index::*;
+use base::search::Strategy;
 use pgrx::datum::Internal;
 use pgrx::pg_sys::Datum;
 
@@ -189,9 +192,14 @@ pub unsafe extern "C" fn ambuild(
             let pointer = ctid_to_pointer(unsafe { ctid.read() });
             let multicolumn_data = unsafe {
                 if (*(*index).rd_index).indnkeyatts == 2 {
-                    pgrx::datum::FromDatum::from_datum(*values.add(1), *is_null.add(1)).unwrap()
+                    from_datum_to_multicolumn_data(
+                        convert_typid_to_dt((*(*index).rd_att).attrs.as_slice(2)[1].atttypid)
+                            .unwrap(),
+                        *values.add(1),
+                        *is_null.add(1),
+                    )
                 } else {
-                    0
+                    std::mem::zeroed()
                 }
             };
             match state.rpc.insert(handle, vector, pointer, multicolumn_data) {
@@ -231,9 +239,13 @@ pub unsafe extern "C" fn aminsert(
     let vector = unsafe { from_datum_to_vector(*values.add(0), *is_null.add(0)) };
     let multicolumn_data = unsafe {
         if (*(*index).rd_index).indnkeyatts == 2 {
-            pgrx::datum::FromDatum::from_datum(*values.add(1), *is_null.add(1)).unwrap()
+            from_datum_to_multicolumn_data(
+                convert_typid_to_dt((*(*index).rd_att).attrs.as_slice(2)[1].atttypid).unwrap(),
+                *values.add(1),
+                *is_null.add(1),
+            )
         } else {
-            0
+            std::mem::zeroed()
         }
     };
     if let Some(vector) = vector {
@@ -261,7 +273,7 @@ pub unsafe extern "C" fn ambeginscan(
     use pgrx::PgMemoryContexts::CurrentMemoryContext;
     let scan = unsafe { pgrx::pg_sys::RelationGetIndexScan(index, n_keys, n_orderbys) };
     unsafe {
-        let scanner = am_scan::scan_make(None);
+        let scanner = am_scan::scan_make(None, vec![]);
         (*scan).opaque = CurrentMemoryContext.leak_and_drop_on_delete(scanner).cast();
     }
     scan
@@ -276,9 +288,6 @@ pub unsafe extern "C" fn amrescan(
     _n_orderbys: std::os::raw::c_int,
 ) {
     unsafe {
-        if (*scan).numberOfKeys != 0 {
-            pgrx::error!("vector search with attributes is not supported");
-        }
         if (*scan).numberOfOrderBys == 0 {
             pgrx::error!("vector search without a ORDER BY clause is not supported");
         }
@@ -295,8 +304,33 @@ pub unsafe extern "C" fn amrescan(
         let value = (*main).sk_argument;
         let is_null = ((*main).sk_flags & pgrx::pg_sys::SK_ISNULL as i32) != 0;
         let vector = from_datum_to_vector(value, is_null);
+        // deal with index cond
+        let mut filter = vec![];
+        if (*scan).numberOfKeys != 0 {
+            let cond = (*scan).keyData.add(0);
+            let typid = (*(*scan).indexRelation)
+                .rd_opcintype
+                .add((*cond).sk_attno as usize - 1);
+            let dt = convert_typid_to_dt(*typid).unwrap();
+
+            for i in 0..(*scan).numberOfKeys {
+                let cond = (*scan).keyData.add(i as _);
+                let value = (*cond).sk_argument;
+                let is_null = ((*cond).sk_flags & pgrx::pg_sys::SK_ISNULL as i32) != 0;
+                let typid = (*(*scan).indexRelation)
+                    .rd_opcintype
+                    .add((*cond).sk_attno as usize - 1);
+                let new_dt = convert_typid_to_dt(*typid).unwrap();
+                if dt != new_dt {
+                    pgrx::error!("index cond with different data types is not supported");
+                }
+                let data = from_datum_to_multicolumn_data(dt, value, is_null);
+                let strategy = Strategy::from((*cond).sk_strategy);
+                filter.push((strategy, data));
+            }
+        }
         let scanner = (*scan).opaque.cast::<Scanner>().as_mut().unwrap_unchecked();
-        let scanner = std::mem::replace(scanner, am_scan::scan_make(vector));
+        let scanner = std::mem::replace(scanner, am_scan::scan_make(vector, filter));
         am_scan::scan_release(scanner);
     }
 }
@@ -336,7 +370,7 @@ pub unsafe extern "C" fn amgettuple(
 pub unsafe extern "C" fn amendscan(scan: pgrx::pg_sys::IndexScanDesc) {
     unsafe {
         let scanner = (*scan).opaque.cast::<Scanner>().as_mut().unwrap_unchecked();
-        let scanner = std::mem::replace(scanner, am_scan::scan_make(None));
+        let scanner = std::mem::replace(scanner, am_scan::scan_make(None, vec![]));
         am_scan::scan_release(scanner);
     }
 }

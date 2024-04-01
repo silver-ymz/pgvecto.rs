@@ -11,7 +11,7 @@ pub trait WorkerOperations {
         handle: Handle,
         vector: OwnedVector,
         pointer: Pointer,
-        multicolumn_data: i64,
+        multicolumn_data: MultiColumnData,
     ) -> Result<(), InsertError>;
     fn delete(&self, handle: Handle, pointer: Pointer) -> Result<(), DeleteError>;
     fn view_basic(&self, handle: Handle) -> Result<impl ViewBasicOperations, BasicError>;

@@ -8,24 +8,31 @@ use base::search::*;
 use base::vector::*;
 
 pub enum Scanner {
-    Initial { vector: Option<OwnedVector> },
-    Basic { basic: ClientBasic },
-    Vbase { vbase: ClientVbase },
+    Initial {
+        vector: Option<OwnedVector>,
+        filter: Vec<(Strategy, MultiColumnData)>,
+    },
+    Basic {
+        basic: ClientBasic,
+    },
+    Vbase {
+        vbase: ClientVbase,
+    },
     Empty {},
 }
 
-pub fn scan_make(vector: Option<OwnedVector>) -> Scanner {
-    Scanner::Initial { vector }
+pub fn scan_make(vector: Option<OwnedVector>, filter: Vec<(Strategy, MultiColumnData)>) -> Scanner {
+    Scanner::Initial { vector, filter }
 }
 
 pub fn scan_next(scanner: &mut Scanner, handle: Handle) -> Option<Pointer> {
-    if let Scanner::Initial { vector } = scanner {
+    if let Scanner::Initial { vector, filter } = scanner {
         if let Some(vector) = vector.as_ref() {
             let rpc = check_client(client());
 
             match SEARCH_MODE.get() {
                 Mode::basic => {
-                    let opts = search_options();
+                    let opts = search_options(filter.clone());
                     let basic = match rpc.basic(handle, vector.clone(), opts) {
                         Ok(x) => x,
                         Err((_, BasicError::NotExist)) => bad_service_not_exist(),
@@ -35,7 +42,7 @@ pub fn scan_next(scanner: &mut Scanner, handle: Handle) -> Option<Pointer> {
                     *scanner = Scanner::Basic { basic };
                 }
                 Mode::vbase => {
-                    let opts = search_options();
+                    let opts = search_options(filter.clone());
                     let vbase = match rpc.vbase(handle, vector.clone(), opts) {
                         Ok(x) => x,
                         Err((_, VbaseError::NotExist)) => bad_service_not_exist(),

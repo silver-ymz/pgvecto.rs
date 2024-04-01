@@ -353,6 +353,7 @@ impl<O: Op> IndexView<O> {
         struct Filtering<'a, F: 'a> {
             enable: bool,
             delete: &'a Delete,
+            acron_filter: (MultiColumnDataType, Vec<(Strategy, MultiColumnData)>),
             external: F,
         }
 
@@ -361,6 +362,7 @@ impl<O: Op> IndexView<O> {
                 Self {
                     enable: self.enable,
                     delete: self.delete,
+                    acron_filter: self.acron_filter.clone(),
                     external: self.external.clone(),
                 }
             }
@@ -368,14 +370,33 @@ impl<O: Op> IndexView<O> {
 
         impl<'a, F: FnMut(Pointer) -> bool + Clone> Filter for Filtering<'a, F> {
             fn check(&mut self, payload: Payload) -> bool {
-                !self.enable
-                    || (self.delete.check(payload).is_some() && (self.external)(payload.pointer()))
+                if !self.enable {
+                    return true;
+                }
+                if !self.delete.check(payload).is_some() {
+                    return false;
+                }
+                for &(strategy, data) in self.acron_filter.1.iter() {
+                    if !eval_prefilter(
+                        self.acron_filter.0,
+                        strategy,
+                        data,
+                        payload.multicolumn_data(),
+                    ) {
+                        return false;
+                    }
+                }
+                (self.external)(payload.pointer())
             }
         }
 
         let filter = Filtering {
             enable: opts.prefilter_enable,
             delete: &self.delete,
+            acron_filter: (
+                self.options.multicolumn.data_type,
+                opts.acron_filter.clone(),
+            ),
             external: filter,
         };
 
@@ -499,7 +520,7 @@ impl<O: Op> IndexView<O> {
         &self,
         vector: Owned<O>,
         pointer: Pointer,
-        multicolumn_data: i64,
+        multicolumn_data: MultiColumnData,
     ) -> Result<Result<(), OutdatedError>, InsertError> {
         if self.options.vector.dims != vector.dims() {
             return Err(InsertError::InvalidVector);
@@ -577,5 +598,34 @@ impl<O: Op> IndexProtect<O> {
             growings: src.sealeds.clone(),
             flexible,
         });
+    }
+}
+
+fn eval_prefilter(
+    datatype: MultiColumnDataType,
+    strategy: Strategy,
+    lhs: MultiColumnData,
+    rhs: MultiColumnData,
+) -> bool {
+    macro_rules! match_eval {
+        ($type:ty) => {{
+            let lhs = bytemuck::from_bytes::<$type>(&lhs[..std::mem::size_of::<$type>()]);
+            let rhs = bytemuck::from_bytes::<$type>(&rhs[..std::mem::size_of::<$type>()]);
+            match strategy {
+                Strategy::Equal => lhs == rhs,
+                Strategy::Less => lhs < rhs,
+                Strategy::LessEqual => lhs <= rhs,
+                Strategy::Greater => lhs > rhs,
+                Strategy::GreaterEqual => lhs >= rhs,
+            }
+        }};
+    }
+
+    match datatype {
+        MultiColumnDataType::None => true,
+        MultiColumnDataType::I32 => match_eval!(i32),
+        MultiColumnDataType::I64 => match_eval!(i64),
+        MultiColumnDataType::F32 => match_eval!(f32),
+        MultiColumnDataType::F64 => match_eval!(f64),
     }
 }

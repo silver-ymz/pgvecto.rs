@@ -1,4 +1,5 @@
 use crate::Op;
+use acron::Acron;
 pub use base::distance::*;
 pub use base::index::*;
 use base::operator::*;
@@ -15,6 +16,7 @@ pub enum Indexing<O: Op> {
     Flat(Flat<O>),
     Ivf(Ivf<O>),
     Hnsw(Hnsw<O>),
+    Acron(Acron<O>),
 }
 
 impl<O: Op> Indexing<O> {
@@ -23,6 +25,7 @@ impl<O: Op> Indexing<O> {
             IndexingOptions::Flat(_) => Self::Flat(Flat::create(path, options, source)),
             IndexingOptions::Ivf(_) => Self::Ivf(Ivf::create(path, options, source)),
             IndexingOptions::Hnsw(_) => Self::Hnsw(Hnsw::create(path, options, source)),
+            IndexingOptions::Acron(_) => Self::Acron(Acron::create(path, options, source)),
         }
     }
 
@@ -31,6 +34,7 @@ impl<O: Op> Indexing<O> {
             IndexingOptions::Flat(_) => Self::Flat(Flat::open(path, options)),
             IndexingOptions::Ivf(_) => Self::Ivf(Ivf::open(path, options)),
             IndexingOptions::Hnsw(_) => Self::Hnsw(Hnsw::open(path, options)),
+            IndexingOptions::Acron(_) => Self::Acron(Acron::open(path, options)),
         }
     }
 
@@ -44,6 +48,7 @@ impl<O: Op> Indexing<O> {
             Indexing::Flat(x) => x.basic(vector, opts, filter),
             Indexing::Ivf(x) => x.basic(vector, opts, filter),
             Indexing::Hnsw(x) => x.basic(vector, opts, filter),
+            Indexing::Acron(x) => x.basic(vector, opts, filter),
         }
     }
 
@@ -57,6 +62,7 @@ impl<O: Op> Indexing<O> {
             Indexing::Flat(x) => x.vbase(vector, opts, filter),
             Indexing::Ivf(x) => x.vbase(vector, opts, filter),
             Indexing::Hnsw(x) => x.vbase(vector, opts, filter),
+            Indexing::Acron(x) => x.vbase(vector, opts, filter),
         }
     }
 
@@ -65,6 +71,7 @@ impl<O: Op> Indexing<O> {
             Indexing::Flat(x) => x.len(),
             Indexing::Ivf(x) => x.len(),
             Indexing::Hnsw(x) => x.len(),
+            Indexing::Acron(x) => x.len(),
         }
     }
 
@@ -73,6 +80,7 @@ impl<O: Op> Indexing<O> {
             Indexing::Flat(x) => x.vector(i),
             Indexing::Ivf(x) => x.vector(i),
             Indexing::Hnsw(x) => x.vector(i),
+            Indexing::Acron(x) => x.vector(i),
         }
     }
 
@@ -81,6 +89,7 @@ impl<O: Op> Indexing<O> {
             Indexing::Flat(x) => x.payload(i),
             Indexing::Ivf(x) => x.payload(i),
             Indexing::Hnsw(x) => x.payload(i),
+            Indexing::Acron(x) => x.payload(i),
         }
     }
 }

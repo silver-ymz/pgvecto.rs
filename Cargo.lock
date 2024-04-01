@@ -3,6 +3,19 @@
 version = 3
 
 [[package]]
+name = "acron"
+version = "0.0.0"
+dependencies = [
+ "base",
+ "bytemuck",
+ "common",
+ "parking_lot",
+ "quantization",
+ "rayon 0.0.0",
+ "storage",
+]
+
+[[package]]
 name = "addr2line"
 version = "0.21.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1358,9 +1371,11 @@ checksum = "ce23b50ad8242c51a442f3ff322d56b02f08852c77e4c0b4d3fd684abc89c683"
 name = "index"
 version = "0.0.0"
 dependencies = [
+ "acron",
  "arc-swap",
  "base",
  "bincode",
+ "bytemuck",
  "byteorder",
  "common",
  "crc32fast",

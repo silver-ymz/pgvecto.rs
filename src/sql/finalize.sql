@@ -664,7 +664,13 @@ CREATE OPERATOR FAMILY veci8_dot_ops USING vectors;
 
 CREATE OPERATOR FAMILY veci8_cos_ops USING vectors;
 
+CREATE OPERATOR FAMILY int_attr_ops USING vectors;
+
 CREATE OPERATOR FAMILY bigint_attr_ops USING vectors;
+
+CREATE OPERATOR FAMILY real_attr_ops USING vectors;
+
+CREATE OPERATOR FAMILY double_precision_attr_ops USING vectors;
 
 -- List of operator classes
 
@@ -732,9 +738,37 @@ CREATE OPERATOR CLASS veci8_cos_ops
     FOR TYPE veci8 USING vectors FAMILY veci8_cos_ops AS
     OPERATOR 1 <=> (veci8, veci8) FOR ORDER BY float_ops;
 
+CREATE OPERATOR CLASS int_attr_ops
+    DEFAULT FOR TYPE int USING vectors FAMILY int_attr_ops AS
+    OPERATOR 1 = (int, int),
+    OPERATOR 2 < (int, int),
+    OPERATOR 3 <= (int, int),
+    OPERATOR 4 > (int, int),
+    OPERATOR 5 >= (int, int);
+
 CREATE OPERATOR CLASS bigint_attr_ops
-    DEFAULT FOR TYPE bigint USING vectors AS
-    OPERATOR 1 = (bigint, bigint);
+    DEFAULT FOR TYPE bigint USING vectors FAMILY bigint_attr_ops AS
+    OPERATOR 1 = (bigint, bigint),
+    OPERATOR 2 < (bigint, bigint),
+    OPERATOR 3 <= (bigint, bigint),
+    OPERATOR 4 > (bigint, bigint),
+    OPERATOR 5 >= (bigint, bigint);
+
+CREATE OPERATOR CLASS real_attr_ops
+    DEFAULT FOR TYPE real USING vectors FAMILY real_attr_ops AS
+    OPERATOR 1 = (real, real),
+    OPERATOR 2 < (real, real),
+    OPERATOR 3 <= (real, real),
+    OPERATOR 4 > (real, real),
+    OPERATOR 5 >= (real, real);
+
+CREATE OPERATOR CLASS double_precision_attr_ops
+    DEFAULT FOR TYPE double precision USING vectors FAMILY double_precision_attr_ops AS
+    OPERATOR 1 = (double precision, double precision),
+    OPERATOR 2 < (double precision, double precision),
+    OPERATOR 3 <= (double precision, double precision),
+    OPERATOR 4 > (double precision, double precision),
+    OPERATOR 5 >= (double precision, double precision);
 
 -- List of views
 

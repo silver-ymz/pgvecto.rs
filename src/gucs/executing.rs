@@ -1,4 +1,4 @@
-use base::index::*;
+use base::{index::*, search::*};
 use pgrx::{GucContext, GucFlags, GucRegistry, GucSetting};
 
 static ENABLE_PREFILTER: GucSetting<bool> = GucSetting::<bool>::new(true);
@@ -38,10 +38,11 @@ pub unsafe fn init() {
     );
 }
 
-pub fn search_options() -> SearchOptions {
+pub fn search_options(acron_filter: Vec<(Strategy, MultiColumnData)>) -> SearchOptions {
     SearchOptions {
         prefilter_enable: ENABLE_PREFILTER.get(),
         hnsw_ef_search: HNSW_EF_SEARCH.get() as usize,
         ivf_nprobe: IVF_NPROBE.get() as u32,
+        acron_filter,
     }
 }

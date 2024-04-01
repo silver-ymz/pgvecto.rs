@@ -1,0 +1,33 @@
+statement ok
+SET search_path TO pg_temp, vectors;
+
+statement ok
+CREATE TABLE t (val vector(3), meta real);
+
+statement ok
+INSERT INTO t (val, meta) SELECT ARRAY[random(), random(), random()]::real[], random() FROM generate_series(1, 1000);
+
+statement ok
+CREATE INDEX ON t USING vectors (val vector_l2_ops, meta)
+WITH (options = "[indexing.acron]");
+
+statement ok
+INSERT INTO t (val, meta) VALUES ('[0.6,0.6,0.6]', 0.4);
+
+query I
+SELECT COUNT(1) FROM (SELECT 1 FROM t WHERE meta > 0 ORDER BY val <-> '[0.5,0.5,0.5]' limit 10) t2;
+----
+10
+
+query I
+SELECT COUNT(1) FROM (SELECT 1 FROM t WHERE meta > 0 ORDER BY val <=> '[0.5,0.5,0.5]' limit 10) t2;
+----
+10
+
+query I
+SELECT COUNT(1) FROM (SELECT 1 FROM t WHERE meta > 0 ORDER BY val <#> '[0.5,0.5,0.5]' limit 10) t2;
+----
+10
+
+statement ok
+DROP TABLE t;

@@ -14,6 +14,7 @@ use quantization::Quantization;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use std::cmp::Reverse;
 use std::collections::BinaryHeap;
+use std::collections::HashSet;
 use std::fs::create_dir;
 use std::ops::RangeInclusive;
 use std::path::Path;
@@ -21,13 +22,12 @@ use std::sync::Arc;
 use storage::operator::OperatorStorage;
 use storage::StorageCollection;
 
-pub trait OperatorHnsw = Operator + OperatorQuantization + OperatorStorage;
-
-pub struct Hnsw<O: OperatorHnsw> {
-    mmap: HnswMmap<O>,
+pub trait OperatorAcron = Operator + OperatorQuantization + OperatorStorage;
+pub struct Acron<O: OperatorAcron> {
+    mmap: AcronMmap<O>,
 }
 
-impl<O: OperatorHnsw> Hnsw<O> {
+impl<O: OperatorAcron> Acron<O> {
     pub fn create<S: Source<O>>(path: &Path, options: IndexOptions, source: &S) -> Self {
         create_dir(path).unwrap();
         let ram = make(path, options, source);
@@ -72,45 +72,47 @@ impl<O: OperatorHnsw> Hnsw<O> {
     }
 }
 
-unsafe impl<O: OperatorHnsw> Send for Hnsw<O> {}
-unsafe impl<O: OperatorHnsw> Sync for Hnsw<O> {}
+unsafe impl<O: OperatorAcron> Send for Acron<O> {}
+unsafe impl<O: OperatorAcron> Sync for Acron<O> {}
 
-pub struct HnswRam<O: OperatorHnsw> {
+pub struct AcronRam<O: OperatorAcron> {
     storage: Arc<StorageCollection<O>>,
     quantization: Quantization<O, StorageCollection<O>>,
     // ----------------------
     m: u32,
+    m_beta: u32,
     // ----------------------
-    graph: HnswRamGraph,
+    graph: AcronRamGraph,
     // ----------------------
     visited: VisitedPool,
 }
 
-struct HnswRamGraph {
-    vertexs: Vec<HnswRamVertex>,
+struct AcronRamGraph {
+    vertexs: Vec<AcronRamVertex>,
 }
 
-struct HnswRamVertex {
-    layers: Vec<RwLock<HnswRamLayer>>,
+struct AcronRamVertex {
+    layers: Vec<RwLock<AcronRamLayer>>,
 }
 
-impl HnswRamVertex {
+impl AcronRamVertex {
     fn levels(&self) -> u8 {
         self.layers.len() as u8 - 1
     }
 }
 
-struct HnswRamLayer {
+struct AcronRamLayer {
     edges: Vec<(F32, u32)>,
 }
 
-pub struct HnswMmap<O: OperatorHnsw> {
+pub struct AcronMmap<O: OperatorAcron> {
     storage: Arc<StorageCollection<O>>,
     quantization: Quantization<O, StorageCollection<O>>,
     // ----------------------
     m: u32,
+    m_beta: u32,
     // ----------------------
-    edges: MmapArray<HnswMmapEdge>,
+    edges: MmapArray<AcronMmapEdge>,
     by_layer_id: MmapArray<usize>,
     by_vertex_id: MmapArray<usize>,
     // ----------------------
@@ -118,25 +120,27 @@ pub struct HnswMmap<O: OperatorHnsw> {
 }
 
 #[derive(Debug, Clone, Copy, Default)]
-struct HnswMmapEdge(#[allow(dead_code)] F32, u32);
+struct AcronMmapEdge(#[allow(dead_code)] F32, u32);
 // we may convert a memory-mapped graph to a memory graph
 // so that it speeds merging sealed segments
 
-unsafe impl<O: OperatorHnsw> Send for HnswMmap<O> {}
-unsafe impl<O: OperatorHnsw> Sync for HnswMmap<O> {}
-unsafe impl Pod for HnswMmapEdge {}
-unsafe impl Zeroable for HnswMmapEdge {}
+unsafe impl<O: OperatorAcron> Send for AcronMmap<O> {}
+unsafe impl<O: OperatorAcron> Sync for AcronMmap<O> {}
+unsafe impl Pod for AcronMmapEdge {}
+unsafe impl Zeroable for AcronMmapEdge {}
 
-pub fn make<O: OperatorHnsw, S: Source<O>>(
+pub fn make<O: OperatorAcron, S: Source<O>>(
     path: &Path,
     options: IndexOptions,
     source: &S,
-) -> HnswRam<O> {
-    let HnswIndexingOptions {
+) -> AcronRam<O> {
+    let AcronIndexingOptions {
         m,
-        ef_construction,
+        m_beta,
+        gamma,
         quantization: quantization_opts,
-    } = options.indexing.clone().unwrap_hnsw();
+    } = options.indexing.clone().unwrap_acron();
+    let m_beta = m_beta as usize;
     let storage = Arc::new(StorageCollection::create(&path.join("raw"), source));
     rayon::check();
     let quantization = Quantization::create(
@@ -148,12 +152,12 @@ pub fn make<O: OperatorHnsw, S: Source<O>>(
     );
     rayon::check();
     let n = storage.len();
-    let graph = HnswRamGraph {
+    let graph = AcronRamGraph {
         vertexs: (0..n)
             .into_par_iter()
-            .map(|i| HnswRamVertex {
+            .map(|i| AcronRamVertex {
                 layers: (0..count_layers_of_a_vertex(m, i))
-                    .map(|_| RwLock::new(HnswRamLayer { edges: Vec::new() }))
+                    .map(|_| RwLock::new(AcronRamLayer { edges: Vec::new() }))
                     .collect(),
             })
             .collect(),
@@ -161,9 +165,9 @@ pub fn make<O: OperatorHnsw, S: Source<O>>(
     let entry = RwLock::<Option<u32>>::new(None);
     let visited = VisitedPool::new(storage.len());
     (0..n).into_par_iter().for_each(|i| {
-        fn fast_search<O: OperatorHnsw>(
+        fn fast_search<O: OperatorAcron>(
             quantization: &Quantization<O, StorageCollection<O>>,
-            graph: &HnswRamGraph,
+            graph: &AcronRamGraph,
             levels: RangeInclusive<u8>,
             u: u32,
             target: Borrowed<'_, O>,
@@ -187,11 +191,12 @@ pub fn make<O: OperatorHnsw, S: Source<O>>(
             }
             u
         }
-        fn local_search<O: OperatorHnsw>(
+        fn local_search<O: OperatorAcron>(
             quantization: &Quantization<O, StorageCollection<O>>,
-            graph: &HnswRamGraph,
+            graph: &AcronRamGraph,
             visited: &mut VisitedGuard,
             vector: Borrowed<'_, O>,
+            m_beta: usize,
             s: u32,
             k: usize,
             i: u8,
@@ -207,11 +212,15 @@ pub fn make<O: OperatorHnsw, S: Source<O>>(
                 if !(results.len() < k || u_dis < results.peek().unwrap().0) {
                     break;
                 }
-                for &(_, v) in graph.vertexs[u as usize].layers[i as usize]
-                    .read()
-                    .edges
-                    .iter()
-                {
+                let edges = &graph.vertexs[u as usize].layers[i as usize].read().edges;
+                let stage1_iter = edges.iter().map(|&(_, v)| v).take(m_beta);
+                let stage2_iter = edges.iter().map(|&(_, v)| v).skip(m_beta).flat_map(|v| {
+                    let edges = &graph.vertexs[v as usize].layers[i as usize].read().edges;
+                    std::iter::once(v)
+                        .chain(edges.iter().map(|&(_, v)| v))
+                        .collect::<Vec<_>>()
+                });
+                for v in stage1_iter.chain(stage2_iter) {
                     if !visited.check(v) {
                         continue;
                     }
@@ -228,26 +237,22 @@ pub fn make<O: OperatorHnsw, S: Source<O>>(
             }
             results.into_sorted_vec()
         }
-        fn select<O: OperatorHnsw>(
-            quantization: &Quantization<O, StorageCollection<O>>,
-            input: &mut Vec<(F32, u32)>,
-            size: u32,
-        ) {
-            if input.len() <= size as usize {
+        fn select(graph: &AcronRamGraph, input: &mut Vec<(F32, u32)>, layer: u8, m_beta: usize) {
+            if input.len() > m_beta {
                 return;
             }
             let mut res = Vec::new();
-            for (u_dis, u) in input.iter().copied() {
-                if res.len() == size as usize {
-                    break;
+            for i in 0..m_beta {
+                res.push(input[i]);
+            }
+            let mut vertex_set = HashSet::new();
+            for i in m_beta..input.len() {
+                if vertex_set.contains(&input[i].1) {
+                    continue;
                 }
-                let check = res
-                    .iter()
-                    .map(|&(_, v)| quantization.distance2(u, v))
-                    .all(|dist| dist > u_dis);
-                if check {
-                    res.push((u_dis, u));
-                }
+                res.push(input[i]);
+                let edges = graph.vertexs[i as usize].layers[layer as usize].read();
+                vertex_set.extend(edges.edges.iter().map(|&(_, v)| v));
             }
             *input = res;
         }
@@ -298,12 +303,13 @@ pub fn make<O: OperatorHnsw, S: Source<O>>(
                 &graph,
                 &mut visited,
                 target,
+                m_beta,
                 u,
-                ef_construction,
+                (m * gamma) as usize,
                 j,
             );
             edges.sort();
-            select(&quantization, &mut edges, count_max_edges_of_a_layer(m, j));
+            select(&graph, &mut edges, j, m_beta);
             u = edges.first().unwrap().1;
             result.push(edges);
         }
@@ -316,27 +322,24 @@ pub fn make<O: OperatorHnsw, S: Source<O>>(
                 let element = (n_dis, i);
                 let (Ok(index) | Err(index)) = write.edges.binary_search(&element);
                 write.edges.insert(index, element);
-                select(
-                    &quantization,
-                    &mut write.edges,
-                    count_max_edges_of_a_layer(m, j),
-                );
+                select(&graph, &mut write.edges, j, m_beta);
             }
         }
         if let Some(mut write) = update_entry {
             *write = Some(i);
         }
     });
-    HnswRam {
+    AcronRam {
         storage,
         quantization,
         m,
+        m_beta: m_beta as u32,
         graph,
         visited,
     }
 }
 
-pub fn save<O: OperatorHnsw>(mut ram: HnswRam<O>, path: &Path) -> HnswMmap<O> {
+pub fn save<O: OperatorAcron>(mut ram: AcronRam<O>, path: &Path) -> AcronMmap<O> {
     let edges = MmapArray::create(
         &path.join("edges"),
         ram.graph
@@ -344,7 +347,7 @@ pub fn save<O: OperatorHnsw>(mut ram: HnswRam<O>, path: &Path) -> HnswMmap<O> {
             .iter_mut()
             .flat_map(|v| v.layers.iter_mut())
             .flat_map(|v| &v.get_mut().edges)
-            .map(|&(_0, _1)| HnswMmapEdge(_0, _1)),
+            .map(|&(_0, _1)| AcronMmapEdge(_0, _1)),
     );
     rayon::check();
     let by_layer_id = MmapArray::create(&path.join("by_layer_id"), {
@@ -360,10 +363,11 @@ pub fn save<O: OperatorHnsw>(mut ram: HnswRam<O>, path: &Path) -> HnswMmap<O> {
         caluate_offsets(iter)
     });
     rayon::check();
-    HnswMmap {
+    AcronMmap {
         storage: ram.storage,
         quantization: ram.quantization,
         m: ram.m,
+        m_beta: ram.m_beta,
         edges,
         by_layer_id,
         by_vertex_id,
@@ -371,8 +375,8 @@ pub fn save<O: OperatorHnsw>(mut ram: HnswRam<O>, path: &Path) -> HnswMmap<O> {
     }
 }
 
-pub fn open<O: OperatorHnsw>(path: &Path, options: IndexOptions) -> HnswMmap<O> {
-    let idx_opts = options.indexing.clone().unwrap_hnsw();
+pub fn open<O: OperatorAcron>(path: &Path, options: IndexOptions) -> AcronMmap<O> {
+    let idx_opts = options.indexing.clone().unwrap_acron();
     let storage = Arc::new(StorageCollection::open(&path.join("raw"), options.clone()));
     let quantization = Quantization::open(
         &path.join("quantization"),
@@ -384,10 +388,11 @@ pub fn open<O: OperatorHnsw>(path: &Path, options: IndexOptions) -> HnswMmap<O> 
     let by_layer_id = MmapArray::open(&path.join("by_layer_id"));
     let by_vertex_id = MmapArray::open(&path.join("by_vertex_id"));
     let n = storage.len();
-    HnswMmap {
+    AcronMmap {
         storage,
         quantization,
         m: idx_opts.m,
+        m_beta: idx_opts.m_beta,
         edges,
         by_layer_id,
         by_vertex_id,
@@ -395,8 +400,8 @@ pub fn open<O: OperatorHnsw>(path: &Path, options: IndexOptions) -> HnswMmap<O> 
     }
 }
 
-pub fn basic<O: OperatorHnsw>(
-    mmap: &HnswMmap<O>,
+pub fn basic<O: OperatorAcron>(
+    mmap: &AcronMmap<O>,
     vector: Borrowed<'_, O>,
     ef_search: usize,
     filter: impl Filter,
@@ -409,8 +414,8 @@ pub fn basic<O: OperatorHnsw>(
     local_search_basic(mmap, ef_search, u, vector, filter).into_reversed_heap()
 }
 
-pub fn vbase<'a, O: OperatorHnsw>(
-    mmap: &'a HnswMmap<O>,
+pub fn vbase<'a, O: OperatorAcron>(
+    mmap: &'a AcronMmap<O>,
     vector: Borrowed<'a, O>,
     range: usize,
     filter: impl Filter + 'a,
@@ -437,7 +442,7 @@ pub fn vbase<'a, O: OperatorHnsw>(
     (stage1, Box::new(iter))
 }
 
-pub fn entry<O: OperatorHnsw>(mmap: &HnswMmap<O>, mut filter: impl Filter) -> Option<u32> {
+pub fn entry<O: OperatorAcron>(mmap: &AcronMmap<O>, mut filter: impl Filter) -> Option<u32> {
     let m = mmap.m;
     let n = mmap.storage.len();
     let mut shift = 1u64;
@@ -465,8 +470,8 @@ pub fn entry<O: OperatorHnsw>(mmap: &HnswMmap<O>, mut filter: impl Filter) -> Op
     None
 }
 
-pub fn fast_search<O: OperatorHnsw>(
-    mmap: &HnswMmap<O>,
+pub fn fast_search<O: OperatorAcron>(
+    mmap: &AcronMmap<O>,
     levels: RangeInclusive<u8>,
     u: u32,
     vector: Borrowed<'_, O>,
@@ -478,11 +483,10 @@ pub fn fast_search<O: OperatorHnsw>(
         let mut changed = true;
         while changed {
             changed = false;
-            let edges = find_edges(mmap, u, i);
-            for &HnswMmapEdge(_, v) in edges.iter() {
-                if !filter.check(mmap.storage.payload(v)) {
-                    continue;
-                }
+            let edges = find_neighbors(mmap, u, i, mmap.m_beta as usize)
+                .into_iter()
+                .filter(|&&AcronMmapEdge(_, v)| filter.check(mmap.storage.payload(v)));
+            for &AcronMmapEdge(_, v) in edges {
                 let v_dis = mmap.quantization.distance(vector, v);
                 if v_dis < u_dis {
                     u = v;
@@ -495,8 +499,8 @@ pub fn fast_search<O: OperatorHnsw>(
     u
 }
 
-pub fn local_search_basic<O: OperatorHnsw>(
-    mmap: &HnswMmap<O>,
+pub fn local_search_basic<O: OperatorAcron>(
+    mmap: &AcronMmap<O>,
     k: usize,
     s: u32,
     vector: Borrowed<'_, O>,
@@ -517,15 +521,14 @@ pub fn local_search_basic<O: OperatorHnsw>(
         if !results.check(u_dis) {
             break;
         }
-        let edges = find_edges(mmap, u, 0);
-        for &HnswMmapEdge(_, v) in edges.iter() {
+        let edges = find_neighbors(mmap, u, 0, mmap.m_beta as usize)
+            .into_iter()
+            .filter(|&&AcronMmapEdge(_, v)| filter.check(mmap.storage.payload(v)));
+        for &AcronMmapEdge(_, v) in edges {
             if !visited.check(v) {
                 continue;
             }
             visited.mark(v);
-            if !filter.check(mmap.storage.payload(v)) {
-                continue;
-            }
             let v_dis = mmap.quantization.distance(vector, v);
             if !results.check(v_dis) {
                 continue;
@@ -540,8 +543,8 @@ pub fn local_search_basic<O: OperatorHnsw>(
     results
 }
 
-pub fn local_search_vbase<'a, O: OperatorHnsw>(
-    mmap: &'a HnswMmap<O>,
+pub fn local_search_vbase<'a, O: OperatorAcron>(
+    mmap: &'a AcronMmap<O>,
     s: u32,
     vector: Borrowed<'a, O>,
     mut filter: impl Filter + 'a,
@@ -554,16 +557,16 @@ pub fn local_search_vbase<'a, O: OperatorHnsw>(
     std::iter::from_fn(move || {
         let Reverse((u_dis, u)) = candidates.pop()?;
         {
-            let edges = find_edges(mmap, u, 0);
-            for &HnswMmapEdge(_, v) in edges.iter() {
+            let edges = find_neighbors(mmap, u, 0, mmap.m_beta as usize)
+                .into_iter()
+                .filter(|&&AcronMmapEdge(_, v)| filter.check(mmap.storage.payload(v)));
+            for &AcronMmapEdge(_, v) in edges {
                 if !visited.check(v) {
                     continue;
                 }
                 visited.mark(v);
-                if filter.check(mmap.storage.payload(v)) {
-                    let v_dis = mmap.quantization.distance(vector, v);
-                    candidates.push(Reverse((v_dis, v)));
-                }
+                let v_dis = mmap.quantization.distance(vector, v);
+                candidates.push(Reverse((v_dis, v)));
             }
         }
         Some(Element {
@@ -583,14 +586,6 @@ fn count_layers_of_a_vertex(m: u32, i: u32) -> u8 {
     ans
 }
 
-fn count_max_edges_of_a_layer(m: u32, j: u8) -> u32 {
-    if j == 0 {
-        m * 2
-    } else {
-        m
-    }
-}
-
 fn caluate_offsets(iter: impl Iterator<Item = usize>) -> impl Iterator<Item = usize> {
     let mut offset = 0usize;
     let mut iter = std::iter::once(0).chain(iter);
@@ -601,12 +596,27 @@ fn caluate_offsets(iter: impl Iterator<Item = usize>) -> impl Iterator<Item = us
     })
 }
 
-fn find_edges<O: OperatorHnsw>(mmap: &HnswMmap<O>, u: u32, level: u8) -> &[HnswMmapEdge] {
+fn find_edges<O: OperatorAcron>(mmap: &AcronMmap<O>, u: u32, level: u8) -> &[AcronMmapEdge] {
     let offset = u as usize;
     let index = mmap.by_vertex_id[offset]..mmap.by_vertex_id[offset + 1];
     let offset = index.start + level as usize;
     let index = mmap.by_layer_id[offset]..mmap.by_layer_id[offset + 1];
     &mmap.edges[index]
+}
+
+fn find_neighbors<O: OperatorAcron>(
+    mmap: &AcronMmap<O>,
+    u: u32,
+    level: u8,
+    m_beta: usize,
+) -> impl IntoIterator<Item = &AcronMmapEdge> + '_ {
+    let edges = find_edges(mmap, u, level);
+    let stage1_iter = edges.iter().take(m_beta);
+    let stage2_iter = edges.iter().skip(m_beta).flat_map(move |v| {
+        let edges = find_edges(mmap, v.1, level);
+        std::iter::once(v).chain(edges.iter()).collect::<Vec<_>>()
+    });
+    stage1_iter.chain(stage2_iter)
 }
 
 struct VisitedPool {

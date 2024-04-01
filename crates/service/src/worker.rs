@@ -136,7 +136,7 @@ impl WorkerOperations for Worker {
         handle: Handle,
         vector: OwnedVector,
         pointer: Pointer,
-        multicolumn_data: i64,
+        multicolumn_data: MultiColumnData,
     ) -> Result<(), InsertError> {
         let view = self.view();
         let instance = view.get(handle).ok_or(InsertError::NotExist)?;

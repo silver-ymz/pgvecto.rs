@@ -4,6 +4,7 @@ use crate::datatype::memory_vecf16::Vecf16Header;
 use crate::datatype::memory_vecf32::Vecf32Header;
 use crate::datatype::memory_veci8::Veci8Header;
 use crate::utils::cells::PgCell;
+use base::index::MultiColumnDataType;
 use base::search::*;
 use base::vector::*;
 
@@ -52,6 +53,37 @@ pub unsafe fn from_datum_to_vector(
         _ => unreachable!(),
     };
     vector
+}
+
+pub unsafe fn from_datum_to_multicolumn_data(
+    data_type: MultiColumnDataType,
+    value: pgrx::pg_sys::Datum,
+    is_null: bool,
+) -> MultiColumnData {
+    let mut data = [0u8; 8];
+    if is_null {
+        pgrx::error!("MultiColumnData is null");
+    }
+    match data_type {
+        MultiColumnDataType::None => unreachable!(),
+        MultiColumnDataType::I32 => {
+            let v: Option<i32> = unsafe { pgrx::FromDatum::from_datum(value, is_null) };
+            data[..4].copy_from_slice(bytemuck::bytes_of(&v.unwrap()));
+        }
+        MultiColumnDataType::I64 => {
+            let v: Option<i64> = unsafe { pgrx::FromDatum::from_datum(value, is_null) };
+            data[..8].copy_from_slice(bytemuck::bytes_of(&v.unwrap()));
+        }
+        MultiColumnDataType::F32 => {
+            let v: Option<f32> = unsafe { pgrx::FromDatum::from_datum(value, is_null) };
+            data[..4].copy_from_slice(bytemuck::bytes_of(&v.unwrap()));
+        }
+        MultiColumnDataType::F64 => {
+            let v: Option<f64> = unsafe { pgrx::FromDatum::from_datum(value, is_null) };
+            data[..8].copy_from_slice(bytemuck::bytes_of(&v.unwrap()));
+        }
+    }
+    data
 }
 
 pub fn from_oid_to_handle(oid: pgrx::pg_sys::Oid) -> Handle {

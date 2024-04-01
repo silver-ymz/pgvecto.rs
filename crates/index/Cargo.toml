@@ -7,6 +7,7 @@ edition.workspace = true
 arc-swap.workspace = true
 bincode.workspace = true
 byteorder.workspace = true
+bytemuck.workspace = true
 crc32fast = "1.4.0"
 crossbeam = "0.8.4"
 dashmap = "5.5.3"
@@ -30,6 +31,7 @@ storage = { path = "../storage" }
 flat = { path = "../flat" }
 hnsw = { path = "../hnsw" }
 ivf = { path = "../ivf" }
+acron = { path = "../acron" }
 
 [lints]
 workspace = true

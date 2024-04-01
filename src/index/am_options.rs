@@ -61,6 +61,16 @@ pub fn convert_opfamily_to_vd(
     None
 }
 
+pub fn convert_typid_to_dt(typid: pgrx::pg_sys::Oid) -> Option<MultiColumnDataType> {
+    match typid {
+        pgrx::pg_sys::INT4OID => Some(MultiColumnDataType::I32),
+        pgrx::pg_sys::INT8OID => Some(MultiColumnDataType::I64),
+        pgrx::pg_sys::FLOAT4OID => Some(MultiColumnDataType::F32),
+        pgrx::pg_sys::FLOAT8OID => Some(MultiColumnDataType::F64),
+        _ => None,
+    }
+}
+
 fn convert_name_to_vd(name: &str) -> Option<(VectorKind, DistanceKind)> {
     match name.strip_suffix("_ops") {
         Some("vector_l2") => Some((VectorKind::Vecf32, DistanceKind::L2)),
@@ -117,10 +127,13 @@ pub unsafe fn options(index: pgrx::pg_sys::Relation) -> IndexOptions {
     if atts.len() > 2 {
         bad_index_column_number();
     }
-    if atts.len() == 2 && atts[1].atttypid != pgrx::pg_sys::INT8OID {
-        bad_index_second_column_type();
+    let mut multicolumn = MultiColumnOptions::default();
+    if atts.len() == 2 {
+        match convert_typid_to_dt(atts[1].atttypid) {
+            Some(dt) => multicolumn.data_type = dt,
+            None => bad_index_second_column_type(),
+        }
     }
-    let multicolumn = atts.len() > 1;
     // get dims
     let typmod = Typmod::parse_from_i32(atts[0].type_mod()).unwrap();
     let dims = check_column_dims(typmod.dims()).get();

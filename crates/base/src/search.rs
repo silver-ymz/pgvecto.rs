@@ -46,16 +46,18 @@ impl Pointer {
     }
 }
 
+pub type MultiColumnData = [u8; 8];
+
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[repr(C)]
 pub struct Payload {
     pointer: Pointer,
     time: u64,
-    multicolumn_data: i64,
+    multicolumn_data: MultiColumnData,
 }
 
 impl Payload {
-    pub fn new(pointer: Pointer, time: u64, multicolumn_data: i64) -> Self {
+    pub fn new(pointer: Pointer, time: u64, multicolumn_data: MultiColumnData) -> Self {
         Self {
             pointer,
             time,
@@ -67,6 +69,9 @@ impl Payload {
     }
     pub fn time(&self) -> u64 {
         self.time
+    }
+    pub fn multicolumn_data(&self) -> MultiColumnData {
+        self.multicolumn_data
     }
 }
 
@@ -92,4 +97,27 @@ pub trait Collection<O: Operator> {
 
 pub trait Source<O: Operator>: Collection<O> {
     // ..
+}
+
+#[repr(u16)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub enum Strategy {
+    Equal = 1,
+    Less,
+    LessEqual,
+    Greater,
+    GreaterEqual,
+}
+
+impl From<u16> for Strategy {
+    fn from(value: u16) -> Self {
+        match value {
+            1 => Strategy::Equal,
+            2 => Strategy::Less,
+            3 => Strategy::LessEqual,
+            4 => Strategy::Greater,
+            5 => Strategy::GreaterEqual,
+            _ => unreachable!(),
+        }
+    }
 }

@@ -421,7 +421,7 @@ impl InstanceView {
         &self,
         vector: OwnedVector,
         pointer: Pointer,
-        multicolumn_data: i64,
+        multicolumn_data: MultiColumnData,
     ) -> Result<Result<(), OutdatedError>, InsertError> {
         macro_rules! match_insert {
             ($(($instance:ident, $vector:ident)),* ,) => {

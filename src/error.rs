@@ -112,7 +112,7 @@ visit `https://github.com/tensorchord/pgvecto.rs/issues` and contribute your ide
 pub fn bad_index_second_column_type() -> ! {
     error!(
         "\
-pgvecto.rs: The second column of indexes can only be built on bigint type.
+pgvecto.rs: The second column of indexes can only be built on int, bigint, real, float type.
 ADVICE: If you want pgvecto.rs to support more types, \
 visit `https://github.com/tensorchord/pgvecto.rs/issues` and contribute your ideas."
     );
