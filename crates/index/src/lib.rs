@@ -302,7 +302,7 @@ pub struct IndexView<O: Op> {
 }
 
 impl<O: Op> IndexView<O> {
-    pub fn basic<'a, F: Fn(Pointer) -> bool + Clone + 'a>(
+    pub fn basic<'a, F: FnMut(Pointer) -> bool + Clone + 'a>(
         &'a self,
         vector: Borrowed<'_, O>,
         opts: &'a SearchOptions,
@@ -345,20 +345,17 @@ impl<O: Op> IndexView<O> {
             }
         }
 
-        impl<'a, F: FnMut(Pointer) -> bool + Clone> Filter for Filtering<'a, F> {
-            fn check(&mut self, payload: Payload) -> bool {
-                if !self.enable {
-                    return true;
-                }
-                if !self.delete.check(payload).is_some() {
+        impl<'a, F: FnMut(Pointer) -> bool> Filtering<'a, F> {
+            fn filter(&mut self, payload: Payload) -> bool {
+                if self.delete.check(payload).is_none() {
                     return false;
                 }
                 for &(strategy, data) in self.acron_filter.1.iter() {
                     if !eval_prefilter(
                         self.acron_filter.0,
                         strategy,
-                        data,
                         payload.multicolumn_data(),
+                        data,
                     ) {
                         return false;
                     }
@@ -367,7 +364,13 @@ impl<O: Op> IndexView<O> {
             }
         }
 
-        let filter = Filtering {
+        impl<'a, F: FnMut(Pointer) -> bool + Clone> Filter for Filtering<'a, F> {
+            fn check(&mut self, payload: Payload) -> bool {
+                !self.enable || self.filter(payload)
+            }
+        }
+
+        let mut filter = Filtering {
             enable: opts.prefilter_enable,
             delete: &self.delete,
             acron_filter: (
@@ -392,8 +395,8 @@ impl<O: Op> IndexView<O> {
             heaps.push(Comparer(p));
         }
         let loser = LoserTree::new(heaps);
-        Ok(loser.filter_map(|x| {
-            if opts.prefilter_enable || self.delete.check(x.payload).is_some() {
+        Ok(loser.filter_map(move |x| {
+            if opts.prefilter_enable || filter.filter(x.payload) {
                 Some(x.payload.pointer())
             } else {
                 None
@@ -418,6 +421,7 @@ impl<O: Op> IndexView<O> {
         struct Filtering<'a, F: 'a> {
             enable: bool,
             delete: &'a Delete,
+            index_cond: (MultiColumnDataType, Vec<(Strategy, MultiColumnData)>),
             external: F,
         }
 
@@ -426,21 +430,44 @@ impl<O: Op> IndexView<O> {
                 Self {
                     enable: self.enable,
                     delete: self.delete,
+                    index_cond: self.index_cond.clone(),
                     external: self.external.clone(),
                 }
             }
         }
 
-        impl<'a, F: FnMut(Pointer) -> bool + Clone + 'a> Filter for Filtering<'a, F> {
-            fn check(&mut self, payload: Payload) -> bool {
-                !self.enable
-                    || (self.delete.check(payload).is_some() && (self.external)(payload.pointer()))
+        impl<'a, F: FnMut(Pointer) -> bool> Filtering<'a, F> {
+            fn filter(&mut self, payload: Payload) -> bool {
+                if self.delete.check(payload).is_none() {
+                    return false;
+                }
+                for &(strategy, data) in self.index_cond.1.iter() {
+                    if !eval_prefilter(
+                        self.index_cond.0,
+                        strategy,
+                        payload.multicolumn_data(),
+                        data,
+                    ) {
+                        return false;
+                    }
+                }
+                (self.external)(payload.pointer())
             }
         }
 
-        let filter = Filtering {
+        impl<'a, F: FnMut(Pointer) -> bool + Clone> Filter for Filtering<'a, F> {
+            fn check(&mut self, payload: Payload) -> bool {
+                !self.enable || self.filter(payload)
+            }
+        }
+
+        let mut filter = Filtering {
             enable: opts.prefilter_enable,
             delete: &self.delete,
+            index_cond: (
+                self.options.multicolumn.data_type,
+                opts.acron_filter.clone(),
+            ),
             external: filter,
         };
 
@@ -465,8 +492,8 @@ impl<O: Op> IndexView<O> {
         alpha.sort_unstable();
         beta.push(Box::new(alpha.into_iter()));
         let loser = LoserTree::new(beta);
-        Ok(loser.filter_map(|x| {
-            if opts.prefilter_enable || self.delete.check(x.payload).is_some() {
+        Ok(loser.filter_map(move |x| {
+            if opts.prefilter_enable || filter.filter(x.payload) {
                 Some(x.payload.pointer())
             } else {
                 None
@@ -583,6 +610,10 @@ fn eval_prefilter(
                 Strategy::GreaterEqual => lhs >= rhs,
             }
         }};
+    }
+
+    if lhs[8] == 1 || rhs[8] == 1 {
+        return false;
     }
 
     match datatype {

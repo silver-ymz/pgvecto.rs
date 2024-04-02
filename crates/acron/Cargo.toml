@@ -4,7 +4,9 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
+log.workspace = true
 bytemuck.workspace = true
+crc32fast.workspace = true
 parking_lot.workspace = true
 
 base = { path = "../base" }

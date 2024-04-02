@@ -46,7 +46,8 @@ impl Pointer {
     }
 }
 
-pub type MultiColumnData = [u8; 8];
+// The last byte is used to store the null flag.
+pub type MultiColumnData = [u8; 9];
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[repr(C)]

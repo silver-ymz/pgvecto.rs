@@ -60,9 +60,10 @@ pub unsafe fn from_datum_to_multicolumn_data(
     value: pgrx::pg_sys::Datum,
     is_null: bool,
 ) -> MultiColumnData {
-    let mut data = [0u8; 8];
+    let mut data = [0u8; 9];
     if is_null {
-        pgrx::error!("MultiColumnData is null");
+        data[8] = 1;
+        return data;
     }
     match data_type {
         MultiColumnDataType::None => unreachable!(),

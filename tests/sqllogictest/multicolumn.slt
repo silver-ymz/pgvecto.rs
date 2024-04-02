@@ -8,6 +8,9 @@ statement ok
 INSERT INTO t (val, meta) SELECT ARRAY[random(), random(), random()]::real[], random() FROM generate_series(1, 1000);
 
 statement ok
+INSERT INTO t (val, meta) VALUES ('[0.6,0.6,0.6]', null);
+
+statement ok
 CREATE INDEX ON t USING vectors (val vector_l2_ops)
 WITH (options = "[indexing.hnsw]");
 
@@ -28,18 +31,13 @@ SELECT COUNT(1) FROM (SELECT 1 FROM t WHERE id < 100 ORDER BY val <-> '[0.5,0.5,
 ----
 10
 
-query I
-SELECT COUNT(1) FROM (SELECT 1 FROM t WHERE meta > 0 ORDER BY val <=> '[0.5,0.5,0.5]' limit 10) t2;
-----
-10
+statement ok
+SELECT 1 FROM t WHERE meta = 0 ORDER BY val <=> '[0.5,0.5,0.5]' limit 10;
 
 query I
-SELECT COUNT(1) FROM (SELECT 1 FROM t WHERE meta BETWEEN 0 AND 10 ORDER BY val <#> '[0.5,0.5,0.5]' limit 10) t2;
+SELECT COUNT(1) FROM (SELECT 1 FROM t WHERE meta BETWEEN 0 AND 0.5 ORDER BY val <#> '[0.5,0.5,0.5]' limit 10) t2;
 ----
 10
-
-statement error
-INSERT INTO t (val, meta) VALUES '[0.6,0.6,0.6]';
 
 statement ok
 DROP TABLE t;

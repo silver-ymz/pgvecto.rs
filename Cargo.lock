@@ -9,6 +9,8 @@ dependencies = [
  "base",
  "bytemuck",
  "common",
+ "crc32fast",
+ "log",
  "parking_lot",
  "quantization",
  "rayon 0.0.0",
