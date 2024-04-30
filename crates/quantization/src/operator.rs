@@ -1,8 +1,12 @@
 use crate::product::operator::OperatorProductQuantization;
 use crate::scalar::operator::OperatorScalarQuantization;
+use crate::sparse::operator::OperatorSparseQuantization;
 use base::operator::*;
 
-pub trait OperatorQuantization: OperatorScalarQuantization + OperatorProductQuantization {}
+pub trait OperatorQuantization:
+    OperatorScalarQuantization + OperatorProductQuantization + OperatorSparseQuantization
+{
+}
 
 impl OperatorQuantization for BVecf32Cos {}
 impl OperatorQuantization for BVecf32Dot {}

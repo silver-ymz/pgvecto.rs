@@ -4,10 +4,12 @@
 pub mod operator;
 pub mod product;
 pub mod scalar;
+pub mod sparse;
 pub mod trivial;
 
 use self::product::ProductQuantization;
 use self::scalar::ScalarQuantization;
+use self::sparse::SparseQuantization;
 use self::trivial::TrivialQuantization;
 use crate::operator::OperatorQuantization;
 use base::index::*;
@@ -21,6 +23,7 @@ pub enum Quantization<O: OperatorQuantization, C: Collection<O>> {
     Trivial(TrivialQuantization<O, C>),
     Scalar(ScalarQuantization<O, C>),
     Product(ProductQuantization<O, C>),
+    Sparse(SparseQuantization<O, C>),
 }
 
 impl<O: OperatorQuantization, C: Collection<O>> Quantization<O, C> {
@@ -47,6 +50,13 @@ impl<O: OperatorQuantization, C: Collection<O>> Quantization<O, C> {
                 permutation,
             )),
             QuantizationOptions::Product(_) => Self::Product(ProductQuantization::create(
+                path,
+                options,
+                quantization_options,
+                collection,
+                permutation,
+            )),
+            QuantizationOptions::Sparse(_) => Self::Sparse(SparseQuantization::create(
                 path,
                 options,
                 quantization_options,
@@ -81,6 +91,12 @@ impl<O: OperatorQuantization, C: Collection<O>> Quantization<O, C> {
                 quantization_options,
                 collection,
             )),
+            QuantizationOptions::Sparse(_) => Self::Sparse(SparseQuantization::open(
+                path,
+                options,
+                quantization_options,
+                collection,
+            )),
         }
     }
 
@@ -90,6 +106,7 @@ impl<O: OperatorQuantization, C: Collection<O>> Quantization<O, C> {
             Trivial(x) => x.distance(lhs, rhs),
             Scalar(x) => x.distance(lhs, rhs),
             Product(x) => x.distance(lhs, rhs),
+            Sparse(x) => x.distance(lhs, rhs),
         }
     }
 
@@ -99,6 +116,7 @@ impl<O: OperatorQuantization, C: Collection<O>> Quantization<O, C> {
             Trivial(x) => x.distance2(lhs, rhs),
             Scalar(x) => x.distance2(lhs, rhs),
             Product(x) => x.distance2(lhs, rhs),
+            Sparse(x) => x.distance2(lhs, rhs),
         }
     }
 }

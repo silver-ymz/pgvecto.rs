@@ -142,11 +142,11 @@ impl<'a> SVecf32Borrowed<'a> {
         }
     }
     #[inline(always)]
-    pub fn indexes(&self) -> &[u32] {
+    pub fn indexes(&self) -> &'a [u32] {
         self.indexes
     }
     #[inline(always)]
-    pub fn values(&self) -> &[F32] {
+    pub fn values(&self) -> &'a [F32] {
         self.values
     }
 }

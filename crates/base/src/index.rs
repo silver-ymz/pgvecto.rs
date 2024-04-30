@@ -118,8 +118,7 @@ pub struct IndexOptions {
 
 impl IndexOptions {
     fn validate_index_options(options: &IndexOptions) -> Result<(), ValidationError> {
-        if options.vector.v != VectorKind::SVecf32
-            && options.vector.v != VectorKind::BVecf32
+        if options.vector.v != VectorKind::BVecf32
             && options.vector.v != VectorKind::Veci8
         {
             return Ok(());
@@ -412,6 +411,7 @@ pub enum QuantizationOptions {
     Trivial(TrivialQuantizationOptions),
     Scalar(ScalarQuantizationOptions),
     Product(ProductQuantizationOptions),
+    Sparse(SparseQuantizationOptions),
 }
 
 impl Validate for QuantizationOptions {
@@ -420,6 +420,7 @@ impl Validate for QuantizationOptions {
             Self::Trivial(x) => x.validate(),
             Self::Scalar(x) => x.validate(),
             Self::Product(x) => x.validate(),
+            Self::Sparse(x) => x.validate(),
         }
     }
 }
@@ -490,6 +491,28 @@ pub enum ProductQuantizationOptionsRatio {
 impl Default for ProductQuantizationOptionsRatio {
     fn default() -> Self {
         Self::X4
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Validate)]
+#[serde(deny_unknown_fields)]
+pub struct SparseQuantizationOptions {
+    #[serde(default = "SparseQuantizationOptions::default_bitmap_lens")]
+    #[validate(range(min = 1, max = 10_000))]
+    pub bitmap_lens: u16,
+}
+
+impl SparseQuantizationOptions {
+    fn default_bitmap_lens() -> u16 {
+        1000
+    }
+}
+
+impl Default for SparseQuantizationOptions {
+    fn default() -> Self {
+        Self {
+            bitmap_lens: Self::default_bitmap_lens(),
+        }
     }
 }
 
